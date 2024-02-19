@@ -60,6 +60,7 @@ class Speech:
         self.model_recognition.audio_processing_type = AudioProcessingType.Full
 
     def synthesize(self, text: str) -> BytesIO:
+        self.audio_stream = BytesIO()
         if self.model_synthesis:
             result = self.model_synthesis.synthesize(text, raw_format=False)
             result.export(self.audio_stream, format="wav")

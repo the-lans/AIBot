@@ -16,13 +16,16 @@ dialogue = DialogueAI(Config.OPENAI_MODEL)
 users_params = defaultdict(lambda: BotParams())
 users_speech = defaultdict(lambda: Speech("marina"))
 state_handler = StateHandlerDecorator()
+hide_markup = ReplyKeyboardRemove()
 
 
 @bot.message_handler(commands=["start"])
 def send_welcome(message):
     user_id = message.chat.id
     params = users_params[user_id]
-    bot.send_message(user_id, "Привет! Я бот, который может поддержать разговор на любую тему.")
+    bot.send_message(
+        user_id, "Привет! Я бот, который может поддержать разговор на любую тему.", reply_markup=hide_markup
+    )
     params.mode = BotState.START
 
 
@@ -31,7 +34,7 @@ def send_clear(message):
     user_id = message.chat.id
     params = users_params[user_id]
     dialogue.clear(user_id)
-    bot.send_message(user_id, "Очистил ваш диалог.")
+    bot.send_message(user_id, "Очистил ваш диалог.", reply_markup=hide_markup)
     params.mode = BotState.CLEAR
 
 
@@ -41,7 +44,7 @@ def send_reset(message):
     dialogue.system(user_id)
     dialogue.clear(user_id)
     users_params[user_id] = params = BotParams()
-    bot.send_message(user_id, "Сбросил ваш диалог.")
+    bot.send_message(user_id, "Сбросил ваш диалог.", reply_markup=hide_markup)
     params.mode = BotState.CLEAR
 
 
@@ -50,8 +53,10 @@ def send_system(message):
     user_id = message.chat.id
     params = users_params[user_id]
     conversation_default = dialogue.get_system(user_id)
-    bot.send_message(user_id, f'Системное сообщение: {conversation_default["content"]}')
-    bot.send_message(user_id, "Напишите системное сообщение боту, которое задаёт стиль общения.")
+    bot.send_message(user_id, f'Системное сообщение: {conversation_default["content"]}', reply_markup=hide_markup)
+    bot.send_message(
+        user_id, "Напишите системное сообщение боту, которое задаёт стиль общения.", reply_markup=hide_markup
+    )
     params.mode = BotState.SYSTEM
 
 
@@ -71,7 +76,7 @@ def handle_system_step2(user_id: str, user_input: str) -> Optional[bool]:
     menu = {"Да": lambda: dialogue.clear(user_id), "Нет": lambda: dialogue.add_system(user_id)}
     if check_message(bot, user_id, user_input, list(menu.keys())):
         menu[user_input]()
-        bot.send_message(user_id, "Системное сообщение записал!")
+        bot.send_message(user_id, "Системное сообщение записал!", reply_markup=hide_markup)
     else:
         return False
 
@@ -82,7 +87,7 @@ def send_voice(message):
     params = users_params[user_id]
     speech = users_speech[user_id]
     url = "https://cloud.yandex.ru/ru/docs/speechkit/tts/voices"
-    bot.send_message(user_id, f"Голос: {speech.voice}. Введите название голоса: {url}")
+    bot.send_message(user_id, f"Голос: {speech.voice}. Введите название голоса: {url}", reply_markup=hide_markup)
     params.mode = BotState.VOICE
 
 
@@ -93,7 +98,7 @@ def handle_voice(user_id: str, user_input: str) -> Optional[bool]:
     msg_error = "Нет такого голоса, попробуйте ещё..."
     if check_message(bot, user_id, user_input, list(menu.keys()), is_markup=False, msg_error=msg_error):
         speech.set_synthesis(user_input)
-        bot.send_message(user_id, "Голос сохранил!")
+        bot.send_message(user_id, "Голос сохранил!", reply_markup=hide_markup)
     else:
         return False
 
@@ -117,7 +122,7 @@ def handle_answer(user_id: str, user_input: str) -> Optional[bool]:
     menu = get_class_dict(BotAnswer)
     if check_message(bot, user_id, user_input, list(menu.keys())):
         params.answer = menu[user_input]
-        bot.send_message(user_id, "Формат ответа сохранил!")
+        bot.send_message(user_id, "Формат ответа сохранил!", reply_markup=hide_markup)
     else:
         return False
 
@@ -140,7 +145,7 @@ def handle_model(user_id: str, user_input: str) -> Optional[bool]:
     if check_message(bot, user_id, user_input, list(menu.keys())):
         params.model = menu[user_input]
         dialogue.user_model[user_id] = params.model[1]
-        bot.send_message(user_id, "Модель ИИ изменил!")
+        bot.send_message(user_id, "Модель ИИ изменил!", reply_markup=hide_markup)
     else:
         return False
 
@@ -161,7 +166,7 @@ def handle_echo(user_id: str, user_input: str) -> Optional[bool]:
     menu = get_class_dict(BotEcho)
     if check_message(bot, user_id, user_input, list(menu.keys())):
         params.echo = menu[user_input]
-        bot.send_message(user_id, "Режим изменил!")
+        bot.send_message(user_id, "Режим изменил!", reply_markup=hide_markup)
     else:
         return False
 
@@ -175,7 +180,7 @@ def handle_output_message(user_id: str, user_input: str) -> Optional[bool]:
         audio_stream = speech.synthesize(ai_response_content)
         bot.send_voice(user_id, audio_stream)
     if params.answer in (BotAnswer.TEXT, BotAnswer.ALL):
-        bot.send_message(user_id, ai_response_content, parse_mode="Markdown")
+        bot.send_message(user_id, ai_response_content, parse_mode="Markdown", reply_markup=hide_markup)
     return None
 
 
@@ -187,10 +192,12 @@ def handle_input_message(message) -> Optional[str]:
         audio_data = bot.download_file(file_info.file_path)
         user_input = speech.recognize(audio_data).strip()
         if user_input:
-            bot.send_message(message.chat.id, user_input, parse_mode="Markdown")
+            bot.send_message(message.chat.id, user_input, parse_mode="Markdown", reply_markup=hide_markup)
         else:
-            bot.send_message(message.chat.id, "Извините, я не смог распознать ваше сообщение.")
-            return
+            bot.send_message(
+                message.chat.id, "Извините, я не смог распознать ваше сообщение.", reply_markup=hide_markup
+            )
+            return None
     else:
         user_input = message.text
     return user_input

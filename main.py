@@ -1,10 +1,12 @@
 from collections import defaultdict
+from typing import Optional
 
 from telebot import TeleBot
 from telebot.types import BotCommand, ReplyKeyboardMarkup, ReplyKeyboardRemove
 
-from lib.bot_params import BotAnswer, BotEcho, BotParams, BotState, get_class_values, is_value_in_class_values
+from lib.bot_params import BotAIModel, BotAnswer, BotEcho, BotParams, BotState, get_class_dict
 from lib.config import Config
+from lib.helpers import StateHandlerDecorator, check_message
 from lib.openai import DialogueAI
 from lib.speech import Speech, SpeechVoice
 
@@ -13,6 +15,7 @@ bot = TeleBot(Config.API_KEY_TELEGRAM_BOT)
 dialogue = DialogueAI(Config.OPENAI_MODEL)
 users_params = defaultdict(lambda: BotParams())
 users_speech = defaultdict(lambda: Speech("marina"))
+state_handler = StateHandlerDecorator()
 
 
 @bot.message_handler(commands=["start"])
@@ -52,6 +55,27 @@ def send_system(message):
     params.mode = BotState.SYSTEM
 
 
+@state_handler.add_handler(BotState.SYSTEM)
+def handle_system(user_id: str, user_input: str) -> Optional[bool]:
+    params = users_params[user_id]
+    dialogue.system(user_id, user_input)
+    markup = ReplyKeyboardMarkup(one_time_keyboard=True)
+    markup.add("Да", "Нет")
+    bot.send_message(user_id, "Сбросить ваш диалог?", reply_markup=markup)
+    params.mode = BotState.SYSTEM_STEP2
+    return False
+
+
+@state_handler.add_handler(BotState.SYSTEM_STEP2)
+def handle_system_step2(user_id: str, user_input: str) -> Optional[bool]:
+    menu = {"Да": lambda: dialogue.clear(user_id), "Нет": lambda: dialogue.add_system(user_id)}
+    if check_message(bot, user_id, user_input, list(menu.keys())):
+        menu[user_input]()
+        bot.send_message(user_id, "Системное сообщение записал!")
+    else:
+        return False
+
+
 @bot.message_handler(commands=["voice"])
 def send_voice(message):
     user_id = message.chat.id
@@ -62,17 +86,63 @@ def send_voice(message):
     params.mode = BotState.VOICE
 
 
+@state_handler.add_handler(BotState.VOICE)
+def handle_voice(user_id: str, user_input: str) -> Optional[bool]:
+    speech = users_speech[user_id]
+    menu = get_class_dict(SpeechVoice)
+    msg_error = "Нет такого голоса, попробуйте ещё..."
+    if check_message(bot, user_id, user_input, list(menu.keys()), is_markup=False, msg_error=msg_error):
+        speech.set_synthesis(user_input)
+        bot.send_message(user_id, "Голос сохранил!")
+    else:
+        return False
+
+
 @bot.message_handler(commands=["answer"])
 def send_answer(message):
     user_id = message.chat.id
     params = users_params[user_id]
-    answers = map(lambda arg: arg.capitalize(), get_class_values(BotAnswer))
+    answers = list(get_class_dict(BotAnswer).keys())
     markup = ReplyKeyboardMarkup(one_time_keyboard=True)
     markup.add(*answers)
     bot.send_message(
-        user_id, f"Формат: {params.answer}. Введите формат ответа: {', '.join(answers)}.", reply_markup=markup
+        user_id, f"Формат: {params.answer[0]}. Введите формат ответа: {', '.join(answers)}.", reply_markup=markup
     )
     params.mode = BotState.ANSWER
+
+
+@state_handler.add_handler(BotState.ANSWER)
+def handle_answer(user_id: str, user_input: str) -> Optional[bool]:
+    params = users_params[user_id]
+    menu = get_class_dict(BotAnswer)
+    if check_message(bot, user_id, user_input, list(menu.keys())):
+        params.answer = menu[user_input]
+        bot.send_message(user_id, "Формат ответа сохранил!")
+    else:
+        return False
+
+
+@bot.message_handler(commands=["model"])
+def send_model(message):
+    user_id = message.chat.id
+    params = users_params[user_id]
+    ai_models = get_class_dict(BotAIModel)
+    markup = ReplyKeyboardMarkup(one_time_keyboard=True)
+    markup.add(*list(ai_models.keys()))
+    bot.send_message(user_id, f"Выберите модель ИИ.", reply_markup=markup)
+    params.mode = BotState.MODEL
+
+
+@state_handler.add_handler(BotState.MODEL)
+def handle_model(user_id: str, user_input: str) -> Optional[bool]:
+    params = users_params[user_id]
+    menu = get_class_dict(BotAIModel)
+    if check_message(bot, user_id, user_input, list(menu.keys())):
+        params.model = menu[user_input]
+        dialogue.user_model[user_id] = params.model[1]
+        bot.send_message(user_id, "Модель ИИ изменил!")
+    else:
+        return False
 
 
 @bot.message_handler(commands=["echo"])
@@ -85,88 +155,62 @@ def send_echo(message):
     params.mode = BotState.ECHO
 
 
-def check_message(user_id: str, user_input: str, choises: list[str]) -> bool:
-    user_input = user_input.strip().lower()
-    if user_input in map(lambda arg: arg.lower(), choises):
-        return True
-    markup = ReplyKeyboardMarkup(one_time_keyboard=True)
-    markup.add(*choises)
-    bot.send_message(user_id, "Неверный ответ. Попробуйте ещё...", reply_markup=markup)
-    return False
+@state_handler.add_handler(BotState.ECHO)
+def handle_echo(user_id: str, user_input: str) -> Optional[bool]:
+    params = users_params[user_id]
+    menu = get_class_dict(BotEcho)
+    if check_message(bot, user_id, user_input, list(menu.keys())):
+        params.echo = menu[user_input]
+        bot.send_message(user_id, "Режим изменил!")
+    else:
+        return False
+
+
+@state_handler.add_handler(None)
+def handle_output_message(user_id: str, user_input: str) -> Optional[bool]:
+    params = users_params[user_id]
+    speech = users_speech[user_id]
+    ai_response_content = dialogue.generate(user_id, user_input) if params.echo == BotEcho.AI else user_input
+    if params.answer in (BotAnswer.VOICE, BotAnswer.ALL):
+        audio_stream = speech.synthesize(ai_response_content)
+        bot.send_voice(user_id, audio_stream)
+    if params.answer in (BotAnswer.TEXT, BotAnswer.ALL):
+        bot.send_message(user_id, ai_response_content, parse_mode="Markdown")
+    return None
+
+
+def handle_input_message(message) -> Optional[str]:
+    if message.content_type == "voice":
+        user_id = message.chat.id
+        speech = users_speech[user_id]
+        file_info = bot.get_file(message.voice.file_id)
+        audio_data = bot.download_file(file_info.file_path)
+        user_input = speech.recognize(audio_data).strip()
+        if user_input:
+            bot.send_message(message.chat.id, user_input, parse_mode="Markdown")
+        else:
+            bot.send_message(message.chat.id, "Извините, я не смог распознать ваше сообщение.")
+            return
+    else:
+        user_input = message.text
+    return user_input
 
 
 @bot.message_handler(func=lambda message: True, content_types=["text", "voice"])
 def handle_message(message):
     user_id = message.chat.id
     params = users_params[user_id]
-    speech = users_speech[user_id]
     next_state = True
-    markup = ReplyKeyboardRemove()
 
-    if message.content_type == "voice":
-        file_info = bot.get_file(message.voice.file_id)
-        audio_data = bot.download_file(file_info.file_path)
-        user_input = speech.recognize(audio_data).strip()
-        if user_input:
-            bot.send_message(message.chat.id, user_input, reply_markup=markup, parse_mode="Markdown")
-        else:
-            bot.send_message(message.chat.id, "Извините, я не смог распознать ваше сообщение.", reply_markup=markup)
-            return
-    else:
-        user_input = message.text
+    # Распознавание входящего сообщения
+    user_input = handle_input_message(message)
+    if user_input is None:
+        return
 
-    if params.mode == BotState.SYSTEM:
-        dialogue.system(user_id, user_input)
-        markup = ReplyKeyboardMarkup(one_time_keyboard=True)
-        markup.add("Да", "Нет")
-        bot.send_message(user_id, "Сбросить ваш диалог?", reply_markup=markup)
-        params.mode = BotState.SYSTEM_STEP2
-        next_state = False
-
-    elif params.mode == BotState.SYSTEM_STEP2:
-        user_input = user_input.strip().capitalize()
-        menu = {"Да": lambda: dialogue.clear(user_id), "Нет": lambda: dialogue.add_system(user_id)}
-        if check_message(user_id, user_input, list(menu.keys())):
-            menu[user_input]()
-            bot.send_message(user_id, "Системное сообщение записал!", reply_markup=markup)
-        else:
-            next_state = False
-
-    elif params.mode == BotState.ECHO:
-        user_input = user_input.strip().capitalize()
-        menu = {"Эхобот": BotEcho.ECHO, "Искусственный интеллект": BotEcho.AI}
-        if check_message(user_id, user_input, list(menu.keys())):
-            params.echo = menu[user_input]
-            bot.send_message(user_id, "Режим изменил!", reply_markup=markup)
-        else:
-            next_state = False
-
-    elif params.mode == BotState.VOICE:
-        user_input = user_input.strip().lower()
-        if is_value_in_class_values(user_input, SpeechVoice):
-            speech.set_synthesis(user_input)
-            bot.send_message(user_id, "Голос сохранил!", reply_markup=markup)
-        else:
-            bot.send_message(user_id, "Нет такого голоса, попробуйте ещё...", reply_markup=markup)
-            next_state = False
-
-    elif params.mode == BotState.ANSWER:
-        user_input = user_input.strip().lower()
-        if is_value_in_class_values(user_input, BotAnswer):
-            params.answer = user_input
-            bot.send_message(user_id, "Формат ответа сохранил!", reply_markup=markup)
-        else:
-            bot.send_message(user_id, "Нет такого значения, попробуйте ещё...", reply_markup=markup)
-            next_state = False
-
-    else:
-        ai_response_content = dialogue.generate(user_id, user_input) if params.echo == BotEcho.AI else user_input
-        if params.answer in (BotAnswer.VOICE, BotAnswer.ALL):
-            audio_stream = speech.synthesize(ai_response_content)
-            bot.send_voice(user_id, audio_stream)
-        if params.answer in (BotAnswer.TEXT, BotAnswer.ALL):
-            bot.send_message(user_id, ai_response_content, reply_markup=markup, parse_mode="Markdown")
-
+    # Функционал в зависимости от состояния
+    result = state_handler.handle(params.mode, user_id, user_input)
+    if result is not None:
+        next_state = result
     if next_state:
         params.mode = BotState.MESSAGE
 
@@ -180,6 +224,7 @@ if __name__ == "__main__":
             BotCommand("system", "Изменить стиль общения"),
             BotCommand("voice", "Задать голос"),
             BotCommand("answer", "Формат ответа: текст или аудио"),
+            BotCommand("model", "Выбор модели ИИ"),
             BotCommand("echo", "Режим эхобота"),
         ]
     )

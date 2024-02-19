@@ -12,6 +12,7 @@ class DialogueAI:
         # Словарь для хранения истории разговора с каждым пользователем
         self.conversation_histories = {}
         self.conversation_default = {}
+        self.user_model = {}
 
     def system(self, user_id: str, system_text: Optional[str] = None):
         if system_text is None:
@@ -24,6 +25,9 @@ class DialogueAI:
         if user_id not in self.conversation_default:
             self.system(user_id)
         return self.conversation_default[user_id]
+
+    def get_model(self, user_id: str):
+        return self.user_model.get(user_id, self.model)
 
     def clear(self, user_id: str):
         self.conversation_histories[user_id] = [self.get_system(user_id)]
@@ -41,6 +45,8 @@ class DialogueAI:
     def generate(self, user_id: str, user_input: str):
         self.add_message(user_id, "user", user_input)
         conversation_history = self.conversation_histories[user_id]
-        chat_completion = self.openai_client.chat.completions.create(model=self.model, messages=conversation_history)
+        chat_completion = self.openai_client.chat.completions.create(
+            model=self.get_model(user_id), messages=conversation_history
+        )
         ai_response_content = chat_completion.choices[0].message.content
         return ai_response_content

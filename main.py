@@ -1,22 +1,30 @@
 from collections import defaultdict
 from typing import Optional
 
-from telebot import TeleBot
-from telebot.types import BotCommand, ReplyKeyboardMarkup, ReplyKeyboardRemove
+from telebot.types import BotCommand, ReplyKeyboardMarkup
 
 from lib.bot_params import BotAIModel, BotAnswer, BotEcho, BotParams, BotState, get_class_dict
 from lib.config import Config
-from lib.helpers import StateHandlerDecorator, check_message
+from lib.helpers import (
+    StateHandlerDecorator,
+    admin_required,
+    bot,
+    check_message,
+    check_start_user,
+    check_user_access,
+    hide_markup,
+    parse_args,
+    send_message_admin,
+    user_storage,
+)
 from lib.openai import DialogueAI
 from lib.speech import Speech, SpeechVoice
 
 
-bot = TeleBot(Config.API_KEY_TELEGRAM_BOT)
 dialogue = DialogueAI(Config.OPENAI_MODEL)
 users_params = defaultdict(lambda: BotParams())
 users_speech = defaultdict(lambda: Speech("marina"))
 state_handler = StateHandlerDecorator()
-hide_markup = ReplyKeyboardRemove()
 
 
 @bot.message_handler(commands=["start"])
@@ -27,6 +35,29 @@ def send_welcome(message):
         user_id, "Привет! Я бот, который может поддержать разговор на любую тему.", reply_markup=hide_markup
     )
     params.mode = BotState.START
+
+
+@bot.message_handler(commands=["users"])
+@admin_required
+def send_users(message):
+    users_str = user_storage.to_str()
+    send_message_admin(f"Информация пользователей:\n" + users_str)
+
+
+@bot.message_handler(commands=["allow_access"])
+@admin_required
+@parse_args(r"/allow_access (\d+)")
+def send_allow_access(message, from_user_id):
+    user_storage.add_user(from_user_id, {"access": True})
+    send_message_admin(f"Доступ разрешён для пользователя с ID: {from_user_id}.")
+
+
+@bot.message_handler(commands=["ban_access"])
+@admin_required
+@parse_args(r"/ban_access (\d+)")
+def send_ban_access(message, from_user_id):
+    user_storage.add_user(from_user_id, {"access": False})
+    send_message_admin(f"Доступ запрещён для пользователя с ID: {from_user_id}.")
 
 
 @bot.message_handler(commands=["clear"])
@@ -174,9 +205,16 @@ def handle_echo(user_id: str, user_input: str) -> Optional[bool]:
 @state_handler.add_handler(None)
 def handle_output_message(user_id: str, user_input: str) -> Optional[bool]:
     params = users_params[user_id]
-    speech = users_speech[user_id]
-    ai_response_content = dialogue.generate(user_id, user_input) if params.echo == BotEcho.AI else user_input
+
+    if check_user_access(user_id):
+        bot.send_message(user_id, f"Ваш запрос отправлен для генерации в {params.model[0]}", reply_markup=hide_markup)
+        ai_response_content = dialogue.generate(user_id, user_input) if params.echo == BotEcho.AI else user_input
+    else:
+        bot.send_message(user_id, "Число генераций для вас ограничено администратором!", reply_markup=hide_markup)
+        return None
+
     if params.answer in (BotAnswer.VOICE, BotAnswer.ALL):
+        speech = users_speech[user_id]
         audio_stream = speech.synthesize(ai_response_content)
         bot.send_voice(user_id, audio_stream)
     if params.answer in (BotAnswer.TEXT, BotAnswer.ALL):
@@ -213,6 +251,9 @@ def handle_message(message):
     user_input = handle_input_message(message)
     if user_input is None:
         return
+
+    # Управление пользователями
+    check_start_user(message)
 
     # Функционал в зависимости от состояния
     result = state_handler.handle(params.mode, user_id, user_input)

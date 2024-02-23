@@ -3,3 +3,6 @@ OPENAI_URL: 'https://api.proxyapi.ru/openai/v1'
 OPENAI_MODEL: 'gpt-3.5-turbo-1106'
 API_KEY_YANDEX_TTS: '<API KEY YANDEX TTS>'
 API_KEY_TELEGRAM_BOT: '<API KEY TELEGRAM BOT>'
+ADMIN_IDS:
+  - <ADMIN_ID>
+  - <ADMIN_ID>

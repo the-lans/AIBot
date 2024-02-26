@@ -7,7 +7,7 @@ class BotState:
     VOICE = "voice"
     ANSWER = "answer"
     MODEL = "model"
-    ECHO = "echo"
+    MODE = "mode"
     MESSAGE = "message"
 
 
@@ -19,7 +19,7 @@ class BotAnswer:
 
 
 # Режим работы бота, его функционал
-class BotEcho:
+class BotMode:
     ECHO = ("Эхобот", "echo")
     AI = ("Искусственный интеллект", "ai")
 
@@ -33,9 +33,9 @@ class BotAIModel:
 
 class BotParams:
     def __init__(self):
-        self.mode = BotState.START
-        self.answer = BotAnswer.VOICE
-        self.echo = BotEcho.AI
+        self.state = BotState.START
+        self.answer = BotAnswer.ALL
+        self.mode = BotMode.AI
         self.model = BotAIModel.CHAT_GPT_35
 
 

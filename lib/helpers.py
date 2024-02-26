@@ -1,5 +1,7 @@
 from functools import wraps
+import logging
 import re
+import threading
 
 from telebot import TeleBot
 from telebot.types import ReplyKeyboardMarkup, ReplyKeyboardRemove
@@ -8,6 +10,7 @@ from lib.config import Config
 from lib.users import UserStorage
 
 
+logger = logging.getLogger(__name__)
 bot = TeleBot(Config.API_KEY_TELEGRAM_BOT)
 user_storage = UserStorage("users.json")
 hide_markup = ReplyKeyboardRemove()
@@ -30,7 +33,7 @@ class StateHandlerDecorator:
         elif None in self._handlers:
             return self._handlers[None](*args, **kwargs)
         else:
-            print(f"No handler found for state {state}")
+            raise Exception(f"No handler found for state {state}")
 
 
 def check_message(
@@ -91,5 +94,37 @@ def parse_args(pattern):
             return func(message, *match.groups())
 
         return wrapped
+
+    return decorator
+
+
+# Декоратор для команды с учётом таймаута
+def command_with_timeout(timeout):
+    def decorator(func):
+        @wraps(func)
+        def wrapper(message, *args, **kwargs):
+            user_id = message.chat.id
+            text = message.text
+
+            def thread_function():
+                try:
+                    func(message, *args, **kwargs)
+                except Exception as ex:
+                    error_text = str(ex)
+                    error_text = error_text[:255] + "..." if len(error_text) > 255 else error_text
+                    bot.send_message(user_id, f"Команда не была выполнена из-за ошибки: {error_text}")
+                    logger.error(ex)
+
+            thread = threading.Thread(target=thread_function)
+            thread.start()
+            thread.join(timeout=timeout)
+            if thread.is_alive():
+                bot.send_message(user_id, "Команда не была выполнена из-за таймаута!")
+                if text.startswith("/"):
+                    logger.error(f"Таймаут команды {text} истёк, прекращаем её выполнение!")
+                else:
+                    logger.error(f"Таймаут обработчика истёк, прекращаем его выполнение!")
+
+        return wrapper
 
     return decorator

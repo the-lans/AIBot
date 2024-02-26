@@ -8,11 +8,6 @@ from speechkit.stt import AudioProcessingType
 from lib.config import Config
 
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    handlers=[logging.StreamHandler()],
-)
 logger = logging.getLogger(__name__)
 configure_credentials(yandex_credentials=creds.YandexCredentials(api_key=Config.API_KEY_YANDEX_TTS))
 

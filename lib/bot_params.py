@@ -28,6 +28,7 @@ class BotEcho:
 class BotAIModel:
     CHAT_GPT_35 = ("GPT-3.5 Turbo 16K", "gpt-3.5-turbo-1106")
     CHAT_GPT_4 = ("GPT-4 Turbo 128K", "gpt-4-1106-preview")
+    DALLE3 = ("DALL-E 3", "dall-e-3")
 
 
 class BotParams:

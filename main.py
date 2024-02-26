@@ -205,13 +205,21 @@ def handle_echo(user_id: str, user_input: str) -> Optional[bool]:
 @state_handler.add_handler(None)
 def handle_output_message(user_id: str, user_input: str) -> Optional[bool]:
     params = users_params[user_id]
+    image_bytes = None
 
     if check_user_access(user_id):
-        bot.send_message(user_id, f"Ваш запрос отправлен для генерации в {params.model[0]}", reply_markup=hide_markup)
-        ai_response_content = dialogue.generate(user_id, user_input) if params.echo == BotEcho.AI else user_input
+        ai_response_content = user_input
+        if params.echo == BotEcho.AI:
+            bot.send_message(
+                user_id, f"Ваш запрос отправлен для генерации в {params.model[0]}", reply_markup=hide_markup
+            )
+            ai_response_content, image_bytes = dialogue.generate(user_id, user_input)
     else:
         bot.send_message(user_id, "Число генераций для вас ограничено администратором!", reply_markup=hide_markup)
         return None
+
+    if image_bytes:
+        bot.send_photo(user_id, image_bytes)
 
     if params.answer in (BotAnswer.VOICE, BotAnswer.ALL):
         speech = users_speech[user_id]

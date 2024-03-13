@@ -1,4 +1,5 @@
 from collections import defaultdict
+from datetime import datetime
 import logging
 from typing import Optional
 
@@ -14,7 +15,9 @@ from lib.helpers import (
     check_start_user,
     check_user_access,
     command_with_timeout,
+    cut_long_message,
     hide_markup,
+    is_message_chain,
     parse_args,
     send_message_admin,
     user_storage,
@@ -226,6 +229,7 @@ def handle_output_message(user_id: str, user_input: str) -> Optional[bool]:
     if image_bytes:
         bot.send_photo(user_id, image_bytes)
 
+    response_content = cut_long_message(response_content, 4000)
     if params.answer in (BotAnswer.VOICE, BotAnswer.ALL):
         speech = users_speech[user_id]
         audio_stream = speech.synthesize(response_content)
@@ -246,10 +250,13 @@ def handle_recognition(user_id: str, user_input: str) -> Optional[bool]:
         return False
 
 
-def handle_input_message(message) -> Optional[str]:
+def handle_input_message(message) -> (Optional[str], str):
     user_id = message.chat.id
     params = users_params[user_id]
-    if message.content_type == "voice":
+    message_time = datetime.fromtimestamp(message.date)
+    params.data["last_time"] = message_time
+    content_type = message.content_type
+    if content_type == "voice":
         speech = users_speech[user_id]
         params.data["file_id"] = None
         file_info = bot.get_file(message.voice.file_id)
@@ -261,11 +268,17 @@ def handle_input_message(message) -> Optional[str]:
             bot.send_message(
                 message.chat.id, "Извините, я не смог распознать ваше сообщение.", reply_markup=hide_markup
             )
-            return None
+            return None, content_type
     else:
         user_input = message.text
         logger.info("User: %s, Input: %s", user_id, user_input)
-    return user_input
+        if is_message_chain(message):
+            params.data["text"] += user_input
+            content_type = "chain"
+        else:
+            user_input = params.data["text"] + user_input
+            params.data["text"] = ""
+    return user_input, content_type
 
 
 @bot.message_handler(func=lambda message: True, content_types=["text", "voice"])
@@ -276,8 +289,8 @@ def handle_message(message):
     next_state = True
 
     # Распознавание входящего сообщения
-    user_input = handle_input_message(message)
-    if user_input is None:
+    user_input, content_type = handle_input_message(message)
+    if user_input is None or content_type == "chain":
         return
 
     # Управление пользователями

@@ -42,7 +42,7 @@ class BotParams:
         self.reset_data()
 
     def reset_data(self):
-        self.data = {"text": None, "file_id": None}
+        self.data = {"text": "", "file_id": None, "last_time": None}
 
 
 def get_class_values(cls):

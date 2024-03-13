@@ -98,6 +98,11 @@ def parse_args(pattern):
     return decorator
 
 
+# Обрезка длинного сообщения
+def cut_long_message(msg: str, length: int) -> str:
+    return msg[:length] + "..." if len(msg) > length else msg
+
+
 # Декоратор для команды с учётом таймаута
 def command_with_timeout(timeout):
     def decorator(func):
@@ -110,8 +115,7 @@ def command_with_timeout(timeout):
                 try:
                     func(message, *args, **kwargs)
                 except Exception as ex:
-                    error_text = str(ex)
-                    error_text = error_text[:255] + "..." if len(error_text) > 255 else error_text
+                    error_text = cut_long_message(str(ex), 512)
                     bot.send_message(user_id, f"Команда не была выполнена из-за ошибки: {error_text}")
                     logger.error(ex)
 
@@ -128,3 +132,11 @@ def command_with_timeout(timeout):
         return wrapper
 
     return decorator
+
+
+# Проверяет сообщение на вхождение его в цепочку
+def is_message_chain(message) -> bool:
+    user_input = message.text
+    if user_input.startswith("+\n") or len(user_input) > 3840:
+        return True
+    return False

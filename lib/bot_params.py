@@ -9,6 +9,7 @@ class BotState:
     MODEL = "model"
     MODE = "mode"
     MESSAGE = "message"
+    RECOGNITION = "recognition"
 
 
 # Формат ответа
@@ -37,6 +38,11 @@ class BotParams:
         self.answer = BotAnswer.ALL
         self.mode = BotMode.AI
         self.model = BotAIModel.CHAT_GPT_35
+        self.data = {}
+        self.reset_data()
+
+    def reset_data(self):
+        self.data = {"text": None, "file_id": None}
 
 
 def get_class_values(cls):

@@ -31,14 +31,33 @@ class SpeechVoice:
     ANTON = "anton"
 
 
+class SpeechLang:
+    DE = ("de-DE", "Немецкий")
+    US = ("en-US", "Английский")
+    ES = ("es-ES", "Испанский")
+    FI = ("fi-FI", "Финский")
+    FR = ("fr-FR", "Французский")
+    HE = ("he-HE", "Иврит")
+    IT = ("it-IT", "Итальянский")
+    KZ = ("kk-KZ", "Казахский")
+    NL = ("nl-NL", "Голландский")
+    PL = ("pl-PL", "Польский")
+    PT = ("pt-PT", "Португальский")
+    BR = ("pt-BR", "Бразильский португальский")
+    RU = ("ru-RU", "Русский язык (по умолчанию)")
+    SE = ("sv-SE", "Шведский")
+    TR = ("tr-TR", "Турецкий")
+    UZ = ("uz-UZ", "Узбекский (латиница)")
+
+
 class Speech:
-    def __init__(self, voice: str):
+    def __init__(self, voice: str, lang: str = "auto"):
         self.audio_stream = BytesIO()
         self.voice = voice
         self.model_synthesis = None
         self.model_recognition = None
         self.set_synthesis(voice)
-        self.set_recognition()
+        self.set_recognition(lang)
 
     def set_synthesis(self, voice: str):
         self.voice = voice
@@ -48,10 +67,10 @@ class Speech:
             self.model_synthesis.voice = voice
             # self.model_synthesis.role = "neutral"
 
-    def set_recognition(self):
+    def set_recognition(self, lang: str = "auto"):
         self.model_recognition = model_repository.recognition_model()
         self.model_recognition.model = "general"
-        self.model_recognition.language = "ru-RU"
+        self.model_recognition.language = lang
         self.model_recognition.audio_processing_type = AudioProcessingType.Full
 
     def synthesize(self, text: str) -> BytesIO:

@@ -20,7 +20,7 @@ from lib.helpers import (
     user_storage,
 )
 from lib.openai import DialogueAI
-from lib.speech import Speech, SpeechVoice
+from lib.speech import Speech, SpeechLang, SpeechVoice
 
 
 logger = logging.getLogger(__name__)
@@ -235,10 +235,23 @@ def handle_output_message(user_id: str, user_input: str) -> Optional[bool]:
     return None
 
 
+@state_handler.add_handler(BotState.RECOGNITION)
+def handle_recognition(user_id: str, user_input: str) -> Optional[bool]:
+    speech = users_speech[user_id]
+    menu = get_class_dict(SpeechLang)
+    msg_error = "Нет такого языка, попробуйте ещё..."
+    if check_message(bot, user_id, user_input, list(menu.keys()), is_markup=False, msg_error=msg_error):
+        speech.set_recognition(user_input)
+    else:
+        return False
+
+
 def handle_input_message(message) -> Optional[str]:
     user_id = message.chat.id
+    params = users_params[user_id]
     if message.content_type == "voice":
         speech = users_speech[user_id]
+        params.data["file_id"] = None
         file_info = bot.get_file(message.voice.file_id)
         audio_data = bot.download_file(file_info.file_path)
         user_input = speech.recognize(audio_data).strip()

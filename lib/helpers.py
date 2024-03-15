@@ -147,6 +147,6 @@ def command_with_timeout(timeout):
 # Проверяет сообщение на вхождение его в цепочку
 def is_message_chain(message) -> bool:
     user_input = message.text
-    if user_input.startswith("+\n") or len(user_input) > 3840:
+    if user_input.startswith("+\n") or len(user_input) > 3580:
         return True
     return False

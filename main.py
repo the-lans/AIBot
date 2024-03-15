@@ -291,7 +291,6 @@ def handle_output_message(user_id: str, user_input: str) -> Optional[bool]:
             response_content = user_input
         else:
             raise Exception("Unidentified bot operating mode")
-        logger.info("User: %s, Output: %s", user_id, response_content)
     else:
         bot.send_message(user_id, "Число генераций для вас ограничено администратором!", reply_markup=hide_markup)
         return None
@@ -300,6 +299,7 @@ def handle_output_message(user_id: str, user_input: str) -> Optional[bool]:
         bot.send_photo(user_id, image_bytes)
 
     response_content = cut_long_message(response_content, 4000)
+    logger.info("User: %s, Output: %s", user_id, response_content)
     if params.answer in (BotAnswer.VOICE, BotAnswer.ALL):
         trans.set_language(Speech.get_langs(users_speech[user_id]))
         lang = trans.detect_language(response_content)
@@ -334,7 +334,7 @@ def handle_input_message(message) -> (Optional[str], str):
             return None, content_type
     else:
         user_input = message.text
-        logger.info("User: %s, Input: %s", user_id, user_input)
+        logger.info("User: %s, Content type: %s, Input: %s", user_id, content_type, user_input)
         if is_message_chain(message):
             params.data["text"] += user_input
             content_type = "chain"

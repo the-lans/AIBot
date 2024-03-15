@@ -2,6 +2,7 @@ from functools import wraps
 import logging
 import re
 import threading
+from typing import Union
 
 from telebot import TeleBot
 from telebot.types import ReplyKeyboardMarkup, ReplyKeyboardRemove
@@ -37,7 +38,12 @@ class StateHandlerDecorator:
 
 
 def check_message(
-    bot: "TeleBot", user_id: str, user_input: str, choises: list[str], is_markup: bool = True, msg_error: str = None
+    bot: "TeleBot",
+    user_id: str,
+    user_input: str,
+    choises: list[str],
+    is_markup: Union[bool, list] = True,
+    msg_error: str = None,
 ) -> bool:
     user_input = user_input.strip().lower()
     if user_input in map(lambda arg: arg.lower(), choises):
@@ -45,9 +51,13 @@ def check_message(
     if msg_error is None:
         msg_error = "Неверный ответ. Попробуйте ещё..."
     markup = None
-    if is_markup:
+    if isinstance(is_markup, list):
         markup = ReplyKeyboardMarkup(one_time_keyboard=True)
-        markup.add(*choises)
+        markup.add(*is_markup)
+    else:
+        if is_markup:
+            markup = ReplyKeyboardMarkup(one_time_keyboard=True)
+            markup.add(*choises)
     bot.send_message(user_id, msg_error, reply_markup=markup)
     return False
 

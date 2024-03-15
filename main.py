@@ -24,12 +24,16 @@ from lib.helpers import (
 )
 from lib.openai import DialogueAI
 from lib.speech import Speech, SpeechLang, SpeechVoice
+from lib.translate import Translate
 
+
+SPEECH_MENU = (SpeechLang.AUTO, SpeechLang.RU, SpeechLang.US)
 
 logger = logging.getLogger(__name__)
 dialogue = DialogueAI(Config.OPENAI_MODEL)
 users_params = defaultdict(lambda: BotParams())
-users_speech = defaultdict(lambda: Speech("marina"))
+users_speech = defaultdict(lambda: (Speech("marina", "auto"), Speech("john", "en-US")))
+trans = Translate()
 state_handler = StateHandlerDecorator()
 
 
@@ -43,7 +47,7 @@ def send_welcome(message):
         "Привет! Я многофункциональный бот. Вот то, что я умею:",
         " * Вести диалог на любую тему: /model -> GPT-4 Turbo 128K",
         " * Превращать ваш голос в текст",
-        " * Читать текст выбранным голосом: /voice",
+        " * Читать текст выбранным голосом: /lang",
         " * Рисовать картинки по запросу: /model -> DALL-E 3",
     ]
     bot.send_message(user_id, "\n".join(msg), reply_markup=hide_markup)
@@ -115,27 +119,93 @@ def handle_system_step2(user_id: str, user_input: str) -> Optional[bool]:
         return False
 
 
-@bot.message_handler(commands=["voice"])
-@command_with_timeout(timeout=30)
-def send_voice(message):
+@bot.message_handler(commands=["lang"])
+def send_lang(message):
     user_id = message.chat.id
     params = users_params[user_id]
-    speech = users_speech[user_id]
-    url = "https://cloud.yandex.ru/ru/docs/speechkit/tts/voices"
-    bot.send_message(user_id, f"Голос: {speech.voice}. Введите название голоса: {url}", reply_markup=hide_markup)
-    params.state = BotState.VOICE
+    speech = users_speech[user_id][0]
+    markup_menu = [item[0] for item in SPEECH_MENU]
+    markup = ReplyKeyboardMarkup(one_time_keyboard=True)
+    markup.add(*markup_menu)
+    url = "https://cloud.yandex.ru/ru/docs/speechkit/stt/models"
+    msg = [
+        f"Язык: {speech.lang}. Выберите первый язык бота.",
+        f"Список языков здесь: {url}",
+        "Кроме этого, можно указать автоматическое распознавание языка 'auto'.",
+    ]
+    bot.send_message(user_id, "\n".join(msg), reply_markup=markup)
+    params.state = BotState.RECOGNITION
 
 
-@state_handler.add_handler(BotState.VOICE)
-def handle_voice(user_id: str, user_input: str) -> Optional[bool]:
-    speech = users_speech[user_id]
+def choice_recognition(user_id: str, user_input: str, step: int) -> Optional[bool]:
+    params = users_params[user_id]
+    speech = users_speech[user_id][step - 1]
+    menu = get_class_dict(SpeechLang)
+    markup_menu = [item[0] for item in SPEECH_MENU]
+    msg_error = "Нет такого языка, попробуйте ещё..."
+    if check_message(bot, user_id, user_input, list(menu.keys()), is_markup=markup_menu, msg_error=msg_error):
+        speech.set_recognition(user_input)
+        bot.send_message(user_id, "Язык сохранил!", reply_markup=hide_markup)
+        if step == 1:
+            url = "https://cloud.yandex.ru/ru/docs/speechkit/tts/voices"
+            msg = [
+                f"Голос: {speech.voice}. Введите название первого голоса.",
+                f"Список голосов здесь: {url}",
+                f"Кроме этого, есть голос с названием 'google'.",
+            ]
+            bot.send_message(user_id, "\n".join(msg), reply_markup=hide_markup)
+            params.state = BotState.VOICE
+            return False
+        elif step == 2:
+            bot.send_message(
+                user_id, f"Голос: {speech.voice}. Введите название второго голоса.", reply_markup=hide_markup
+            )
+            params.state = BotState.VOICE_STEP2
+            return False
+    else:
+        return False
+
+
+@state_handler.add_handler(BotState.RECOGNITION)
+def handle_recognition(user_id: str, user_input: str) -> Optional[bool]:
+    return choice_recognition(user_id, user_input, 1)
+
+
+@state_handler.add_handler(BotState.RECOGNITION_STEP2)
+def handle_recognition2(user_id: str, user_input: str) -> Optional[bool]:
+    return choice_recognition(user_id, user_input, 2)
+
+
+def choice_voice(user_id: str, user_input: str, step: int) -> Optional[bool]:
+    params = users_params[user_id]
+    speech = users_speech[user_id][step - 1]
     menu = get_class_dict(SpeechVoice)
     msg_error = "Нет такого голоса, попробуйте ещё..."
     if check_message(bot, user_id, user_input, list(menu.keys()), is_markup=False, msg_error=msg_error):
         speech.set_synthesis(user_input)
         bot.send_message(user_id, "Голос сохранил!", reply_markup=hide_markup)
+        if step == 1:
+            speech = users_speech[user_id][step]
+            markup_menu = [item[0] for item in SPEECH_MENU]
+            markup = ReplyKeyboardMarkup(one_time_keyboard=True)
+            markup.add(*markup_menu)
+            bot.send_message(user_id, f"Язык: {speech.lang}. Выберите второй язык бота.", reply_markup=markup)
+            params.state = BotState.RECOGNITION_STEP2
+            return False
+        elif step == 2:
+            return True
     else:
         return False
+
+
+@state_handler.add_handler(BotState.VOICE)
+def handle_voice(user_id: str, user_input: str) -> Optional[bool]:
+    return choice_voice(user_id, user_input, 1)
+
+
+@state_handler.add_handler(BotState.VOICE_STEP2)
+def handle_voice2(user_id: str, user_input: str) -> Optional[bool]:
+    return choice_voice(user_id, user_input, 2)
 
 
 @bot.message_handler(commands=["answer"])
@@ -231,23 +301,14 @@ def handle_output_message(user_id: str, user_input: str) -> Optional[bool]:
 
     response_content = cut_long_message(response_content, 4000)
     if params.answer in (BotAnswer.VOICE, BotAnswer.ALL):
-        speech = users_speech[user_id]
+        trans.set_language(Speech.get_langs(users_speech[user_id]))
+        lang = trans.detect_language(response_content)
+        speech = Speech.choce_from_lang(users_speech[user_id], lang) if lang else users_speech[user_id][0]
         audio_stream = speech.synthesize(response_content)
         bot.send_voice(user_id, audio_stream)
     if params.answer in (BotAnswer.TEXT, BotAnswer.ALL):
         bot.send_message(user_id, response_content, parse_mode="Markdown", reply_markup=hide_markup)
     return None
-
-
-@state_handler.add_handler(BotState.RECOGNITION)
-def handle_recognition(user_id: str, user_input: str) -> Optional[bool]:
-    speech = users_speech[user_id]
-    menu = get_class_dict(SpeechLang)
-    msg_error = "Нет такого языка, попробуйте ещё..."
-    if check_message(bot, user_id, user_input, list(menu.keys()), is_markup=False, msg_error=msg_error):
-        speech.set_recognition(user_input)
-    else:
-        return False
 
 
 def handle_input_message(message) -> (Optional[str], str):
@@ -257,7 +318,9 @@ def handle_input_message(message) -> (Optional[str], str):
     params.data["last_time"] = message_time
     content_type = message.content_type
     if content_type == "voice":
-        speech = users_speech[user_id]
+        speech = Speech.choce_from_lang(users_speech[user_id], "auto")
+        if speech is None:
+            speech = users_speech[user_id][0]
         params.data["file_id"] = None
         file_info = bot.get_file(message.voice.file_id)
         audio_data = bot.download_file(file_info.file_path)
@@ -318,7 +381,7 @@ if __name__ == "__main__":
             BotCommand("start", "Начать работу с ботом"),
             BotCommand("clear", "Очистить ваш диалог"),
             BotCommand("system", "Изменить стиль общения"),
-            BotCommand("voice", "Задать голос"),
+            BotCommand("lang", "Задать язык и голос"),
             BotCommand("answer", "Формат ответа: текст или аудио"),
             BotCommand("model", "Выбор модели ИИ"),
             BotCommand("mode", "Выбор режима: эхобот или ИИ"),

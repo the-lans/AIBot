@@ -1,5 +1,6 @@
 from io import BytesIO
 import logging
+from typing import Optional, Union
 
 from gtts import gTTS
 from speechkit import configure_credentials, creds, model_repository
@@ -14,6 +15,11 @@ configure_credentials(yandex_credentials=creds.YandexCredentials(api_key=Config.
 
 class SpeechVoice:
     GOOGLE = "google"
+    JOHN = "john"
+    LEA = "lea"
+    NAOMI = "naomi"
+    AMIRA = "amira"
+    MADI = "madi"
     ALENA = "alena"
     FILIPP = "filipp"
     ERMIL = "ermil"
@@ -29,9 +35,11 @@ class SpeechVoice:
     ALEXANDER = "alexander"
     KIRILL = "kirill"
     ANTON = "anton"
+    NIGORA = "nigora"
 
 
 class SpeechLang:
+    AUTO = ("auto", "Авто")
     DE = ("de-DE", "Немецкий")
     US = ("en-US", "Английский")
     ES = ("es-ES", "Испанский")
@@ -44,7 +52,7 @@ class SpeechLang:
     PL = ("pl-PL", "Польский")
     PT = ("pt-PT", "Португальский")
     BR = ("pt-BR", "Бразильский португальский")
-    RU = ("ru-RU", "Русский язык (по умолчанию)")
+    RU = ("ru-RU", "Русский язык")
     SE = ("sv-SE", "Шведский")
     TR = ("tr-TR", "Турецкий")
     UZ = ("uz-UZ", "Узбекский (латиница)")
@@ -54,6 +62,7 @@ class Speech:
     def __init__(self, voice: str, lang: str = "auto"):
         self.audio_stream = BytesIO()
         self.voice = voice
+        self.lang = lang
         self.model_synthesis = None
         self.model_recognition = None
         self.set_synthesis(voice)
@@ -68,6 +77,7 @@ class Speech:
             # self.model_synthesis.role = "neutral"
 
     def set_recognition(self, lang: str = "auto"):
+        self.lang = lang
         self.model_recognition = model_repository.recognition_model()
         self.model_recognition.model = "general"
         self.model_recognition.language = lang
@@ -79,7 +89,7 @@ class Speech:
             result = self.model_synthesis.synthesize(text, raw_format=False)
             result.export(self.audio_stream, format="wav")
         else:
-            tts = gTTS(text, lang="ru")
+            tts = gTTS(text, lang=self.lang[:2])
             tts.write_to_fp(self.audio_stream)
         self.audio_stream.seek(0)
         return self.audio_stream
@@ -106,3 +116,24 @@ class Speech:
         logger.info("Recognize text: %s", self._recognize_log(result))
         text = "\n".join([res.normalized_text for res in result])
         return text
+
+    @staticmethod
+    def choce_from_lang(lst: Union[tuple, list], lang: str) -> Optional["Speech"]:
+        def _get_item(lst, value, split):
+            for item in lst:
+                if item.lang[:split] == value:
+                    return item
+            return None
+
+        if lang != "auto":
+            if result := _get_item(lst, lang, 5):
+                return result
+            if result := _get_item(lst, lang, 2):
+                return result
+        if result := _get_item(lst, "auto", 5):
+            return result
+        return None
+
+    @staticmethod
+    def get_langs(lst: Union[tuple, list]) -> list[str]:
+        return [item.lang for item in lst]

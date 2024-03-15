@@ -5,11 +5,13 @@ class BotState:
     SYSTEM = "system"
     SYSTEM_STEP2 = "system_step2"
     VOICE = "voice"
+    VOICE_STEP2 = "voice_step2"
     ANSWER = "answer"
     MODEL = "model"
     MODE = "mode"
     MESSAGE = "message"
     RECOGNITION = "recognition"
+    RECOGNITION_STEP2 = "recognition_step2"
 
 
 # Формат ответа
@@ -35,7 +37,7 @@ class BotAIModel:
 class BotParams:
     def __init__(self):
         self.state = BotState.START
-        self.answer = BotAnswer.ALL
+        self.answer = BotAnswer.TEXT
         self.mode = BotMode.AI
         self.model = BotAIModel.CHAT_GPT_35
         self.data = {}

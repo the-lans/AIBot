@@ -8,6 +8,7 @@ from telebot.types import BotCommand, ReplyKeyboardMarkup
 
 from lib.bot_params import BotAIModel, BotAnswer, BotMode, BotParams, BotState, get_class_dict
 from lib.config import Config
+from lib.errors import UnableDetectLanguage, UnidentifiedMode
 from lib.helpers import (
     StateHandlerDecorator,
     admin_required,
@@ -298,7 +299,9 @@ def handle_mode_echo(user_id: str, user_input: str) -> (str, Optional[BytesIO]):
 @mode_handler.add_handler(BotMode.TRANSLATE)
 def handle_mode_translate(user_id: str, user_input: str) -> (str, Optional[BytesIO]):
     lang_from = trans.detect_language(user_input)
-    speech_from = Speech.choce_from_lang(users_speech[user_id], lang_from) if lang_from else users_speech[user_id][0]
+    if lang_from is None:
+        raise UnableDetectLanguage()
+    speech_from = Speech.choce_from_lang(users_speech[user_id], lang_from)
     speech_to = get_alternative_value(users_speech[user_id], speech_from)
     if speech_to.lang == "auto":
         langs_map = {"ru": "en", "en": "ru"}
@@ -311,7 +314,7 @@ def handle_mode_translate(user_id: str, user_input: str) -> (str, Optional[Bytes
 
 @mode_handler.add_handler(None)
 def handle_mode_other(user_id: str, user_input: str) -> (str, Optional[BytesIO]):
-    raise Exception("Unidentified bot operating mode")
+    raise UnidentifiedMode()
 
 
 @state_handler.add_handler(None)
@@ -321,7 +324,9 @@ def handle_output_message(user_id: str, user_input: str) -> Optional[bool]:
     if check_user_access(user_id):
         response_content, image_bytes = mode_handler.handle(params.mode, user_id, user_input)
     else:
-        bot.send_message(user_id, "Число генераций для вас ограничено администратором!", reply_markup=hide_markup)
+        msg = "Число генераций для вас ограничено администратором!"
+        logger.warning("User: %s, Message: %s", user_id, msg)
+        bot.send_message(user_id, msg, reply_markup=hide_markup)
         return None
 
     if image_bytes:
@@ -332,7 +337,9 @@ def handle_output_message(user_id: str, user_input: str) -> Optional[bool]:
     if params.answer in (BotAnswer.VOICE, BotAnswer.ALL):
         trans.set_language(Speech.get_langs(users_speech[user_id]))
         lang = trans.detect_language(response_content)
-        speech = Speech.choce_from_lang(users_speech[user_id], lang) if lang else users_speech[user_id][0]
+        if lang is None:
+            raise UnableDetectLanguage()
+        speech = Speech.choce_from_lang(users_speech[user_id], lang)
         audio_stream = speech.synthesize(response_content)
         bot.send_voice(user_id, audio_stream)
     if params.answer in (BotAnswer.TEXT, BotAnswer.ALL):
@@ -363,7 +370,7 @@ def handle_input_message(message) -> (Optional[str], str):
             return None, content_type
     else:
         user_input = message.text
-        logger.info("User: %s, Content type: %s, Input: %s", user_id, content_type, user_input)
+        logger.info("User: %s, Type: %s, Input: %s", user_id, content_type, user_input)
         if is_message_chain(message):
             params.data["text"] += user_input
             content_type = "chain"

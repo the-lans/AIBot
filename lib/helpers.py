@@ -8,6 +8,7 @@ from telebot import TeleBot
 from telebot.types import ReplyKeyboardMarkup, ReplyKeyboardRemove
 
 from lib.config import Config
+from lib.errors import NotFoundHandler
 from lib.users import UserStorage
 
 
@@ -30,11 +31,23 @@ class StateHandlerDecorator:
 
     def handle(self, state, *args, **kwargs):
         if state in self._handlers:
-            return self._handlers[state](*args, **kwargs)
+            try:
+                result = self._handlers[state](*args, **kwargs)
+            except Exception as ex:
+                logger.error("Error handler %s: %s", state, ex)
+                raise
+            return result
         elif None in self._handlers:
-            return self._handlers[None](*args, **kwargs)
+            try:
+                result = self._handlers[None](*args, **kwargs)
+            except Exception as ex:
+                logger.error("Error else-handler: %s", ex)
+                raise
+            return result
         else:
-            raise Exception(f"No handler found for state {state}")
+            ex = NotFoundHandler(state)
+            logger.error(ex)
+            raise ex
 
 
 def check_message(
@@ -73,7 +86,9 @@ def check_start_user(message):
         first_name = message.chat.first_name or "<неизвестно>"
         username = message.chat.username or "<без username>"
         user_storage.add_user(user_id, {"access": True, "first_name": first_name, "username": username})
-        send_message_admin(f"Появился новый пользователь ID: {user_id}, имя: {first_name}, ник: {username}")
+        msg = f"Появился новый пользователь ID: {user_id}, имя: {first_name}, ник: {username}"
+        logger.info(msg)
+        send_message_admin(msg)
 
 
 def check_user_access(user_id: str) -> bool:
@@ -126,8 +141,8 @@ def command_with_timeout(timeout):
                     func(message, *args, **kwargs)
                 except Exception as ex:
                     error_text = cut_long_message(str(ex), 512)
-                    bot.send_message(user_id, f"Команда не была выполнена из-за ошибки: {error_text}")
                     logger.error(ex)
+                    bot.send_message(user_id, f"Команда не была выполнена из-за ошибки: {error_text}")
 
             thread = threading.Thread(target=thread_function)
             thread.start()

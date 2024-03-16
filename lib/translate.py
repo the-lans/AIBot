@@ -32,3 +32,18 @@ class Translate:
             return language
         else:
             return None
+
+    def translate(self, text: str, lang_to: str, lang_from: Optional[str] = None) -> Optional[str]:
+        url = "https://translate.api.cloud.yandex.net/translate/v2/translate"
+        headers = {"Authorization": f"Api-Key {Config.API_KEY_YANDEX_TTS}", "Content-Type": "application/json"}
+        data = {"texts": [text], "targetLanguageCode": lang_to}
+        if self.folder_id:
+            data["folderId"] = self.folder_id
+        if lang_from:
+            data["sourceLanguageCode"] = lang_from
+        response = requests.post(url, headers=headers, json=data)
+        if response.status_code == 200:
+            json_response = response.json()
+            return json_response["translations"][0]["text"]
+        else:
+            return None

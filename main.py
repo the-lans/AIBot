@@ -1,5 +1,6 @@
 from collections import defaultdict
 from datetime import datetime
+from io import BytesIO
 import logging
 from typing import Optional
 
@@ -16,6 +17,7 @@ from lib.helpers import (
     check_user_access,
     command_with_timeout,
     cut_long_message,
+    get_alternative_value,
     hide_markup,
     is_message_chain,
     parse_args,
@@ -35,6 +37,7 @@ users_params = defaultdict(lambda: BotParams())
 users_speech = defaultdict(lambda: (Speech("marina", "auto"), Speech("john", "en-US")))
 trans = Translate()
 state_handler = StateHandlerDecorator()
+mode_handler = StateHandlerDecorator()
 
 
 @bot.message_handler(commands=["start"])
@@ -49,6 +52,7 @@ def send_welcome(message):
         " * Превращать ваш голос в текст",
         " * Читать текст выбранным голосом: /lang",
         " * Рисовать картинки по запросу: /model -> DALL-E 3",
+        " * Переводить текст на разные языки: /mode -> Переводчик",
     ]
     bot.send_message(user_id, "\n".join(msg), reply_markup=hide_markup)
 
@@ -259,8 +263,9 @@ def handle_model(user_id: str, user_input: str) -> Optional[bool]:
 def send_mode(message):
     user_id = message.chat.id
     params = users_params[user_id]
+    menu = get_class_dict(BotMode)
     markup = ReplyKeyboardMarkup(one_time_keyboard=True)
-    markup.add("Эхобот", "Искусственный интеллект")
+    markup.add(*list(menu.keys()))
     bot.send_message(user_id, "Выберите режим функционирования бота.", reply_markup=markup)
     params.state = BotState.MODE
 
@@ -276,21 +281,44 @@ def handle_mode(user_id: str, user_input: str) -> Optional[bool]:
         return False
 
 
+@mode_handler.add_handler(BotMode.AI)
+def handle_mode_ai(user_id: str, user_input: str) -> (str, Optional[BytesIO]):
+    params = users_params[user_id]
+    bot.send_message(user_id, f"Ваш запрос отправлен для генерации в {params.model[0]}", reply_markup=hide_markup)
+    response_content, image_bytes = dialogue.generate(user_id, user_input)
+    return response_content, image_bytes
+
+
+@mode_handler.add_handler(BotMode.ECHO)
+def handle_mode_echo(user_id: str, user_input: str) -> (str, Optional[BytesIO]):
+    return user_input, None
+
+
+@mode_handler.add_handler(BotMode.TRANSLATE)
+def handle_mode_translate(user_id: str, user_input: str) -> (str, Optional[BytesIO]):
+    lang_from = trans.detect_language(user_input)
+    speech_from = Speech.choce_from_lang(users_speech[user_id], lang_from) if lang_from else users_speech[user_id][0]
+    speech_to = get_alternative_value(users_speech[user_id], speech_from)
+    if speech_to.lang == "auto":
+        langs_map = {"ru": "en", "en": "ru"}
+        lang_to = langs_map[lang_from] if lang_from in langs_map else "ru"
+    else:
+        lang_to = speech_to.lang2
+    response_content = trans.translate(user_input, lang_to, lang_from)
+    return response_content, None
+
+
+@mode_handler.add_handler(None)
+def handle_mode_other(user_id: str, user_input: str) -> (str, Optional[BytesIO]):
+    raise Exception("Unidentified bot operating mode")
+
+
 @state_handler.add_handler(None)
 def handle_output_message(user_id: str, user_input: str) -> Optional[bool]:
     params = users_params[user_id]
-    image_bytes = None
 
     if check_user_access(user_id):
-        if params.mode == BotMode.AI:
-            bot.send_message(
-                user_id, f"Ваш запрос отправлен для генерации в {params.model[0]}", reply_markup=hide_markup
-            )
-            response_content, image_bytes = dialogue.generate(user_id, user_input)
-        elif params.mode == BotMode.ECHO:
-            response_content = user_input
-        else:
-            raise Exception("Unidentified bot operating mode")
+        response_content, image_bytes = mode_handler.handle(params.mode, user_id, user_input)
     else:
         bot.send_message(user_id, "Число генераций для вас ограничено администратором!", reply_markup=hide_markup)
         return None

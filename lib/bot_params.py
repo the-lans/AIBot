@@ -25,6 +25,7 @@ class BotAnswer:
 class BotMode:
     ECHO = ("Эхобот", "echo")
     AI = ("Искусственный интеллект", "ai")
+    TRANSLATE = ("Переводчик", "translate")
 
 
 # Используемая модель ИИ

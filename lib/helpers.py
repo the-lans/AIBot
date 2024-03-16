@@ -2,7 +2,7 @@ from functools import wraps
 import logging
 import re
 import threading
-from typing import Union
+from typing import Any, Optional, Union
 
 from telebot import TeleBot
 from telebot.types import ReplyKeyboardMarkup, ReplyKeyboardRemove
@@ -150,3 +150,10 @@ def is_message_chain(message) -> bool:
     if user_input.startswith("+\n") or len(user_input) > 3580:
         return True
     return False
+
+
+# Выбирает другое значение из списка
+def get_alternative_value(lst: Union[list, tuple], val: Any) -> Optional[Any]:
+    alternative_list = list(lst)
+    alternative_list.remove(val)
+    return alternative_list[0] if alternative_list else None

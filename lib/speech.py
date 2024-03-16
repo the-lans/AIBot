@@ -68,6 +68,10 @@ class Speech:
         self.set_synthesis(voice)
         self.set_recognition(lang)
 
+    @property
+    def lang2(self):
+        return self.lang if self.lang == "auto" else self.lang[:2]
+
     def set_synthesis(self, voice: str):
         self.voice = voice
         self.model_synthesis = None
@@ -89,7 +93,7 @@ class Speech:
             result = self.model_synthesis.synthesize(text, raw_format=False)
             result.export(self.audio_stream, format="wav")
         else:
-            tts = gTTS(text, lang=self.lang[:2])
+            tts = gTTS(text, lang=self.lang2)
             tts.write_to_fp(self.audio_stream)
         self.audio_stream.seek(0)
         return self.audio_stream

@@ -46,6 +46,7 @@ def send_welcome(message):
     dialogue.system(user_id)
     dialogue.clear(user_id)
     users_params[user_id] = BotParams()
+    users_speech[user_id] = (Speech("marina", "auto"), Speech("john", "en-US"))
     msg = [
         "Привет! Я многофункциональный бот. Вот то, что я умею:",
         " * Вести диалог на любую тему: /model -> GPT-4 Turbo 128K",

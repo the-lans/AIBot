@@ -1,17 +1,18 @@
 # Состояние, в котором находится пользователь
 class BotState:
     START = "start"
+    MESSAGE = "message"
     CLEAR = "clear"
     SYSTEM = "system"
     SYSTEM_STEP2 = "system_step2"
-    VOICE = "voice"
-    VOICE_STEP2 = "voice_step2"
     ANSWER = "answer"
     MODEL = "model"
     MODE = "mode"
-    MESSAGE = "message"
+    VOICE = "voice"
+    VOICE_STEP2 = "voice_step2"
     RECOGNITION = "recognition"
     RECOGNITION_STEP2 = "recognition_step2"
+    RECOGNITION_STEP3 = "recognition_step3"
 
 
 # Формат ответа
@@ -35,12 +36,19 @@ class BotAIModel:
     DALLE3 = ("DALL-E 3", "dall-e-3")
 
 
+# Настройка типа перевода
+class BotTypeTranslate:
+    AUTO = ("Авто", "auto")
+    MANUAL = ("Вручную", "manual")
+
+
 class BotParams:
     def __init__(self):
         self.state = BotState.START
         self.answer = BotAnswer.TEXT
         self.mode = BotMode.AI
         self.model = BotAIModel.CHAT_GPT_35
+        self.type_translate = BotTypeTranslate.AUTO
         self.data = {}
         self.reset_data()
 

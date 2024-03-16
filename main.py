@@ -6,7 +6,7 @@ from typing import Optional
 
 from telebot.types import BotCommand, ReplyKeyboardMarkup
 
-from lib.bot_params import BotAIModel, BotAnswer, BotMode, BotParams, BotState, get_class_dict
+from lib.bot_params import BotAIModel, BotAnswer, BotMode, BotParams, BotState, BotTypeTranslate, get_class_dict
 from lib.config import Config
 from lib.errors import UnableDetectLanguage, UnidentifiedMode
 from lib.helpers import (
@@ -30,7 +30,8 @@ from lib.speech import Speech, SpeechLang, SpeechVoice
 from lib.translate import Translate
 
 
-SPEECH_MENU = (SpeechLang.AUTO, SpeechLang.RU, SpeechLang.US)
+ENUM_NEXT = ("Далее>>", "next")
+SPEECH_MENU = (SpeechLang.AUTO, SpeechLang.RU, SpeechLang.US, ENUM_NEXT)
 
 logger = logging.getLogger(__name__)
 dialogue = DialogueAI(Config.OPENAI_MODEL)
@@ -147,11 +148,15 @@ def choice_recognition(user_id: str, user_input: str, step: int) -> Optional[boo
     params = users_params[user_id]
     speech = users_speech[user_id][step - 1]
     menu = get_class_dict(SpeechLang)
+    menu[ENUM_NEXT[0]] = ENUM_NEXT
     markup_menu = [item[0] for item in SPEECH_MENU]
     msg_error = "Нет такого языка, попробуйте ещё..."
     if check_message(bot, user_id, user_input, list(menu.keys()), is_markup=markup_menu, msg_error=msg_error):
-        speech.set_recognition(user_input)
-        bot.send_message(user_id, "Язык сохранил!", reply_markup=hide_markup)
+        if user_input != ENUM_NEXT[0]:
+            speech.set_recognition(user_input)
+            bot.send_message(user_id, "Язык сохранил!", reply_markup=hide_markup)
+        markup = ReplyKeyboardMarkup(one_time_keyboard=True)
+        markup.add(ENUM_NEXT[0])
         if step == 1:
             url = "https://cloud.yandex.ru/ru/docs/speechkit/tts/voices"
             msg = [
@@ -159,13 +164,11 @@ def choice_recognition(user_id: str, user_input: str, step: int) -> Optional[boo
                 f"Список голосов здесь: {url}",
                 f"Кроме этого, есть голос с названием 'google'.",
             ]
-            bot.send_message(user_id, "\n".join(msg), reply_markup=hide_markup)
+            bot.send_message(user_id, "\n".join(msg), reply_markup=markup)
             params.state = BotState.VOICE
             return False
         elif step == 2:
-            bot.send_message(
-                user_id, f"Голос: {speech.voice}. Введите название второго голоса.", reply_markup=hide_markup
-            )
+            bot.send_message(user_id, f"Голос: {speech.voice}. Введите название второго голоса.", reply_markup=markup)
             params.state = BotState.VOICE_STEP2
             return False
     else:
@@ -182,14 +185,30 @@ def handle_recognition2(user_id: str, user_input: str) -> Optional[bool]:
     return choice_recognition(user_id, user_input, 2)
 
 
+@state_handler.add_handler(BotState.RECOGNITION_STEP3)
+def handle_recognition3(user_id: str, user_input: str) -> Optional[bool]:
+    params = users_params[user_id]
+    menu = get_class_dict(BotTypeTranslate)
+    menu[ENUM_NEXT[0]] = ENUM_NEXT
+    if check_message(bot, user_id, user_input, list(menu.keys()), is_markup=False):
+        if user_input != ENUM_NEXT[0]:
+            params.type_translate = menu[user_input]
+            bot.send_message(user_id, "Тип перевода сохранил!", reply_markup=hide_markup)
+        return True
+    else:
+        return False
+
+
 def choice_voice(user_id: str, user_input: str, step: int) -> Optional[bool]:
     params = users_params[user_id]
     speech = users_speech[user_id][step - 1]
     menu = get_class_dict(SpeechVoice)
+    menu[ENUM_NEXT[0]] = ENUM_NEXT
     msg_error = "Нет такого голоса, попробуйте ещё..."
     if check_message(bot, user_id, user_input, list(menu.keys()), is_markup=False, msg_error=msg_error):
-        speech.set_synthesis(user_input)
-        bot.send_message(user_id, "Голос сохранил!", reply_markup=hide_markup)
+        if user_input != ENUM_NEXT[0]:
+            speech.set_synthesis(user_input)
+            bot.send_message(user_id, "Голос сохранил!", reply_markup=hide_markup)
         if step == 1:
             speech = users_speech[user_id][step]
             markup_menu = [item[0] for item in SPEECH_MENU]
@@ -199,7 +218,16 @@ def choice_voice(user_id: str, user_input: str, step: int) -> Optional[bool]:
             params.state = BotState.RECOGNITION_STEP2
             return False
         elif step == 2:
-            return True
+            menu = get_class_dict(BotTypeTranslate)
+            menu[ENUM_NEXT[0]] = ENUM_NEXT
+            markup_menu = list(menu.keys())
+            markup = ReplyKeyboardMarkup(one_time_keyboard=True)
+            markup.add(*markup_menu)
+            bot.send_message(
+                user_id, f"Тип перевода: {params.type_translate[0]}. Выберите тип перевода.", reply_markup=markup
+            )
+            params.state = BotState.RECOGNITION_STEP3
+            return False
     else:
         return False
 

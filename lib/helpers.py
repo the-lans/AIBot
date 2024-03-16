@@ -67,10 +67,9 @@ def check_message(
     if isinstance(is_markup, list):
         markup = ReplyKeyboardMarkup(one_time_keyboard=True)
         markup.add(*is_markup)
-    else:
-        if is_markup:
-            markup = ReplyKeyboardMarkup(one_time_keyboard=True)
-            markup.add(*choises)
+    elif is_markup is True:
+        markup = ReplyKeyboardMarkup(one_time_keyboard=True)
+        markup.add(*choises)
     bot.send_message(user_id, msg_error, reply_markup=markup)
     return False
 

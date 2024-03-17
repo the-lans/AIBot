@@ -3,6 +3,7 @@ from typing import Optional
 import requests
 
 from lib.config import Config
+from lib.helpers import get_lang2
 
 
 class Translate:
@@ -15,8 +16,8 @@ class Translate:
         for item in langs:
             if item == "auto":
                 self.language_code_hints = []
-                break
-            self.language_code_hints.append(item[:2])
+                return
+            self.language_code_hints.append(get_lang2(item))
 
     def detect_language(self, text: str) -> Optional[str]:
         url = "https://translate.api.cloud.yandex.net/translate/v2/detect"

@@ -22,3 +22,8 @@ class UnidentifiedMode(BaseMainException):
 class NotFoundHandler(BaseMainException):
     def __init__(self, state):
         self.message = f"No handler found for state {state}"
+
+
+class EmptyContent(BaseMainException):
+    def __init__(self):
+        self.message = "Empty content"

@@ -19,7 +19,8 @@ hide_markup = ReplyKeyboardRemove()
 
 
 class StateHandlerDecorator:
-    def __init__(self):
+    def __init__(self, name: Optional[str] = None):
+        self._name = name
         self._handlers = {}
 
     def add_handler(self, state):
@@ -34,19 +35,19 @@ class StateHandlerDecorator:
             try:
                 result = self._handlers[state](*args, **kwargs)
             except Exception as ex:
-                logger.error("Error handler %s: %s", state, ex)
+                logger.error("Error handler %s. State %s: %s", self._name, state, ex)
                 raise
             return result
         elif None in self._handlers:
             try:
                 result = self._handlers[None](*args, **kwargs)
             except Exception as ex:
-                logger.error("Error else-handler: %s", ex)
+                logger.error("Error else-handler %s. Exeption: %s", self._name, ex)
                 raise
             return result
         else:
             ex = NotFoundHandler(state)
-            logger.error(ex)
+            logger.error("Name handler: %s, Error: %s", self._name, ex)
             raise ex
 
 
@@ -171,3 +172,8 @@ def get_alternative_value(lst: Union[list, tuple], val: Any) -> Optional[Any]:
     alternative_list = list(lst)
     alternative_list.remove(val)
     return alternative_list[0] if alternative_list else None
+
+
+# Вернуть язык без региона
+def get_lang2(lang: str) -> str:
+    return lang[:2]

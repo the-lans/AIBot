@@ -8,7 +8,7 @@ from telebot.types import BotCommand, ReplyKeyboardMarkup
 
 from lib.bot_params import BotAIModel, BotAnswer, BotMode, BotParams, BotState, BotTypeTranslate, get_class_dict
 from lib.config import Config
-from lib.errors import UnableDetectLanguage, UnidentifiedMode
+from lib.errors import EmptyContent, UnableDetectLanguage, UnidentifiedMode
 from lib.helpers import (
     StateHandlerDecorator,
     admin_required,
@@ -19,6 +19,7 @@ from lib.helpers import (
     command_with_timeout,
     cut_long_message,
     get_alternative_value,
+    get_lang2,
     hide_markup,
     is_message_chain,
     parse_args,
@@ -34,12 +35,35 @@ ENUM_NEXT = ("Далее>>", "next")
 SPEECH_MENU = (SpeechLang.AUTO, SpeechLang.RU, SpeechLang.US, ENUM_NEXT)
 
 logger = logging.getLogger(__name__)
+
 dialogue = DialogueAI(Config.OPENAI_MODEL)
 users_params = defaultdict(lambda: BotParams())
 users_speech = defaultdict(lambda: (Speech("marina", "auto"), Speech("john", "en-US")))
-trans = Translate()
-state_handler = StateHandlerDecorator()
-mode_handler = StateHandlerDecorator()
+users_trans = defaultdict(lambda: Translate())
+state_handler = StateHandlerDecorator("state_handler")
+mode_handler = StateHandlerDecorator("mode_handler")
+
+
+def get_markup_message(user_id: str):
+    params = users_params[user_id]
+    if params.mode == BotMode.TRANSLATE and params.type_translate == BotTypeTranslate.MANUAL:
+        markup = ReplyKeyboardMarkup(one_time_keyboard=False)
+        for speech in users_speech[user_id]:
+            markup.add(speech.lang)
+        return markup
+    else:
+        return hide_markup
+
+
+def check_answer_settings(user_id: str, user_input: str) -> bool:
+    params = users_params[user_id]
+    if params.mode == BotMode.TRANSLATE and params.type_translate == BotTypeTranslate.MANUAL:
+        user_input = user_input.strip()
+        menu = get_class_dict(SpeechLang)
+        if user_input in menu:
+            params.lang = menu[user_input]
+            return True
+    return False
 
 
 @bot.message_handler(commands=["start"])
@@ -65,7 +89,7 @@ def send_welcome(message):
 def send_users(message):
     user_id = message.chat.id
     users_str = user_storage.to_str()
-    bot.send_message(user_id, f"Информация пользователей:\n" + users_str, reply_markup=hide_markup)
+    bot.send_message(user_id, f"Информация пользователей:\n" + users_str, reply_markup=get_markup_message(user_id))
 
 
 @bot.message_handler(commands=["allow_access"])
@@ -89,7 +113,7 @@ def send_clear(message):
     user_id = message.chat.id
     params = users_params[user_id]
     dialogue.clear(user_id)
-    bot.send_message(user_id, "Очистил ваш диалог.", reply_markup=hide_markup)
+    bot.send_message(user_id, "Очистил ваш диалог.", reply_markup=get_markup_message(user_id))
     params.state = BotState.CLEAR
 
 
@@ -121,7 +145,7 @@ def handle_system_step2(user_id: str, user_input: str) -> Optional[bool]:
     menu = {"Да": lambda: dialogue.clear(user_id), "Нет": lambda: dialogue.add_system(user_id)}
     if check_message(bot, user_id, user_input, list(menu.keys())):
         menu[user_input]()
-        bot.send_message(user_id, "Системное сообщение записал!", reply_markup=hide_markup)
+        bot.send_message(user_id, "Системное сообщение записал!", reply_markup=get_markup_message(user_id))
     else:
         return False
 
@@ -193,7 +217,9 @@ def handle_recognition3(user_id: str, user_input: str) -> Optional[bool]:
     if check_message(bot, user_id, user_input, list(menu.keys()), is_markup=False):
         if user_input != ENUM_NEXT[0]:
             params.type_translate = menu[user_input]
-            bot.send_message(user_id, "Тип перевода сохранил!", reply_markup=hide_markup)
+            if params.type_translate == BotTypeTranslate.AUTO:
+                params.lang = SpeechLang.AUTO
+            bot.send_message(user_id, "Тип перевода сохранил!", reply_markup=get_markup_message(user_id))
         return True
     else:
         return False
@@ -261,7 +287,7 @@ def handle_answer(user_id: str, user_input: str) -> Optional[bool]:
     menu = get_class_dict(BotAnswer)
     if check_message(bot, user_id, user_input, list(menu.keys())):
         params.answer = menu[user_input]
-        bot.send_message(user_id, "Формат ответа сохранил!", reply_markup=hide_markup)
+        bot.send_message(user_id, "Формат ответа сохранил!", reply_markup=get_markup_message(user_id))
     else:
         return False
 
@@ -284,7 +310,7 @@ def handle_model(user_id: str, user_input: str) -> Optional[bool]:
     if check_message(bot, user_id, user_input, list(menu.keys())):
         params.model = menu[user_input]
         dialogue.user_model[user_id] = params.model[1]
-        bot.send_message(user_id, "Модель ИИ изменил!", reply_markup=hide_markup)
+        bot.send_message(user_id, "Модель ИИ изменил!", reply_markup=get_markup_message(user_id))
     else:
         return False
 
@@ -306,7 +332,7 @@ def handle_mode(user_id: str, user_input: str) -> Optional[bool]:
     menu = get_class_dict(BotMode)
     if check_message(bot, user_id, user_input, list(menu.keys())):
         params.mode = menu[user_input]
-        bot.send_message(user_id, "Режим изменил!", reply_markup=hide_markup)
+        bot.send_message(user_id, "Режим изменил!", reply_markup=get_markup_message(user_id))
     else:
         return False
 
@@ -326,9 +352,14 @@ def handle_mode_echo(user_id: str, user_input: str) -> (str, Optional[BytesIO]):
 
 @mode_handler.add_handler(BotMode.TRANSLATE)
 def handle_mode_translate(user_id: str, user_input: str) -> (str, Optional[BytesIO]):
-    lang_from = trans.detect_language(user_input)
-    if lang_from is None:
-        raise UnableDetectLanguage()
+    params = users_params[user_id]
+    trans = users_trans[user_id]
+    if params.lang == SpeechLang.AUTO:
+        lang_from = trans.detect_language(user_input)
+        if lang_from is None:
+            raise UnableDetectLanguage()
+    else:
+        lang_from = get_lang2(params.lang[0])
     speech_from = Speech.choce_from_lang(users_speech[user_id], lang_from)
     speech_to = get_alternative_value(users_speech[user_id], speech_from)
     if speech_to.lang == "auto":
@@ -348,30 +379,34 @@ def handle_mode_other(user_id: str, user_input: str) -> (str, Optional[BytesIO])
 @state_handler.add_handler(None)
 def handle_output_message(user_id: str, user_input: str) -> Optional[bool]:
     params = users_params[user_id]
+    trans = users_trans[user_id]
 
     if check_user_access(user_id):
         response_content, image_bytes = mode_handler.handle(params.mode, user_id, user_input)
     else:
         msg = "Число генераций для вас ограничено администратором!"
         logger.warning("User: %s, Message: %s", user_id, msg)
-        bot.send_message(user_id, msg, reply_markup=hide_markup)
+        bot.send_message(user_id, msg, reply_markup=get_markup_message(user_id))
         return None
 
     if image_bytes:
         bot.send_photo(user_id, image_bytes)
+    if not response_content:
+        raise EmptyContent()
 
     response_content = cut_long_message(response_content, 4000)
     logger.info("User: %s, Output: %s", user_id, response_content)
     if params.answer in (BotAnswer.VOICE, BotAnswer.ALL):
-        trans.set_language(Speech.get_langs(users_speech[user_id]))
-        lang = trans.detect_language(response_content)
-        if lang is None:
+        lang_hints = Speech.get_langs(users_speech[user_id])
+        trans.set_language(lang_hints)
+        lang_from = trans.detect_language(response_content)
+        if lang_from is None:
             raise UnableDetectLanguage()
-        speech = Speech.choce_from_lang(users_speech[user_id], lang)
+        speech = Speech.choce_from_lang(users_speech[user_id], lang_from)
         audio_stream = speech.synthesize(response_content)
         bot.send_voice(user_id, audio_stream)
     if params.answer in (BotAnswer.TEXT, BotAnswer.ALL):
-        bot.send_message(user_id, response_content, parse_mode="Markdown", reply_markup=hide_markup)
+        bot.send_message(user_id, response_content, parse_mode="Markdown", reply_markup=get_markup_message(user_id))
     return None
 
 
@@ -382,18 +417,25 @@ def handle_input_message(message) -> (Optional[str], str):
     params.data["last_time"] = message_time
     content_type = message.content_type
     if content_type == "voice":
-        speech = Speech.choce_from_lang(users_speech[user_id], "auto")
+        lang = params.lang[0] if params.type_translate == BotTypeTranslate.MANUAL else "auto"
+        speech = Speech.choce_from_lang(users_speech[user_id], lang)
         if speech is None:
             speech = users_speech[user_id][0]
+        if lang != speech.lang:
+            speech.set_recognition(lang)
         params.data["file_id"] = None
         file_info = bot.get_file(message.voice.file_id)
         audio_data = bot.download_file(file_info.file_path)
         user_input = speech.recognize(audio_data).strip()
         if user_input:
-            bot.send_message(message.chat.id, user_input, parse_mode="Markdown", reply_markup=hide_markup)
+            bot.send_message(
+                message.chat.id, user_input, parse_mode="Markdown", reply_markup=get_markup_message(user_id)
+            )
         else:
             bot.send_message(
-                message.chat.id, "Извините, я не смог распознать ваше сообщение.", reply_markup=hide_markup
+                message.chat.id,
+                "Извините, я не смог распознать ваше сообщение.",
+                reply_markup=get_markup_message(user_id),
             )
             return None, content_type
     else:
@@ -422,6 +464,10 @@ def handle_message(message):
 
     # Управление пользователями
     check_start_user(message)
+
+    # Проверка сообщения на настройки
+    if params.state == BotState.MESSAGE and check_answer_settings(user_id, user_input):
+        return
 
     # Функционал в зависимости от состояния
     result = state_handler.handle(params.state, user_id, user_input)

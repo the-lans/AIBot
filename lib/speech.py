@@ -72,24 +72,28 @@ class Speech:
     def lang2(self):
         return self.lang if self.lang == "auto" else self.lang[:2]
 
+    def is_google(self) -> bool:
+        return self.voice == SpeechVoice.GOOGLE
+
     def set_synthesis(self, voice: str):
         self.voice = voice
-        self.model_synthesis = None
-        if voice != SpeechVoice.GOOGLE:
-            self.model_synthesis = model_repository.synthesis_model()
+        if not self.is_google():
+            if self.model_synthesis is None:
+                self.model_synthesis = model_repository.synthesis_model()
             self.model_synthesis.voice = voice
             # self.model_synthesis.role = "neutral"
 
     def set_recognition(self, lang: str = "auto"):
         self.lang = lang
-        self.model_recognition = model_repository.recognition_model()
+        if self.model_recognition is None:
+            self.model_recognition = model_repository.recognition_model()
         self.model_recognition.model = "general"
         self.model_recognition.language = lang
         self.model_recognition.audio_processing_type = AudioProcessingType.Full
 
     def synthesize(self, text: str) -> BytesIO:
         self.audio_stream = BytesIO()
-        if self.model_synthesis:
+        if not self.is_google():
             result = self.model_synthesis.synthesize(text, raw_format=False)
             result.export(self.audio_stream, format="wav")
         else:
@@ -141,3 +145,7 @@ class Speech:
     @staticmethod
     def get_langs(lst: Union[tuple, list]) -> list[str]:
         return [item.lang for item in lst]
+
+    @staticmethod
+    def get_langs2(lst: Union[tuple, list]) -> list[str]:
+        return [item.lang2 for item in lst]

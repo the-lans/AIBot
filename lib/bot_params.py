@@ -1,3 +1,6 @@
+from lib.speech import SpeechLang
+
+
 # Состояние, в котором находится пользователь
 class BotState:
     START = "start"
@@ -49,6 +52,7 @@ class BotParams:
         self.mode = BotMode.AI
         self.model = BotAIModel.CHAT_GPT_35
         self.type_translate = BotTypeTranslate.AUTO
+        self.lang = SpeechLang.AUTO
         self.data = {}
         self.reset_data()
 

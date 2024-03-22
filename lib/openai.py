@@ -16,6 +16,31 @@ class DialogueAI:
         self.conversation_default = {}
         self.user_model = {}
 
+    def __deepcopy__(self, memo):
+        new_obj = DialogueAI(self.model)
+        data = {key: getattr(self, key) for key in ["conversation_histories", "conversation_default", "user_model"]}
+        new_obj.init(data)
+        memo[id(self)] = new_obj
+        return new_obj
+
+    def init(self, data: dict):
+        for user_id, val in data.items():
+            for name in ["conversation_histories", "conversation_default", "user_model"]:
+                obj_dict = getattr(self, name)
+                if name in val:
+                    obj_dict[user_id] = val[name]
+
+    def to_dict(self) -> dict:
+        data = {}
+        for name in ["conversation_histories", "conversation_default", "user_model"]:
+            obj_dict = getattr(self, name)
+            for user_id, val in obj_dict.items():
+                if user_id in data:
+                    data[user_id].update({name: val})
+                else:
+                    data[user_id] = {name: val}
+        return data
+
     def system(self, user_id: str, system_text: Optional[str] = None):
         if system_text is None:
             system_text = "Ты — ChatGPT, большая языковая модель, обученная OpenAI. "
@@ -30,6 +55,9 @@ class DialogueAI:
 
     def get_model(self, user_id: str) -> str:
         return self.user_model.get(user_id, self.model)
+
+    def reset_model(self, user_id: str):
+        self.user_model[user_id] = self.model
 
     def clear(self, user_id: str):
         self.conversation_histories[user_id] = [self.get_system(user_id)]

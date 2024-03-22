@@ -7,13 +7,14 @@ from speechkit import configure_credentials, creds, model_repository
 from speechkit.stt import AudioProcessingType
 
 from lib.config import Config
+from lib.enum import BaseEnum
 
 
 logger = logging.getLogger(__name__)
 configure_credentials(yandex_credentials=creds.YandexCredentials(api_key=Config.API_KEY_YANDEX_TTS))
 
 
-class SpeechVoice:
+class SpeechVoice(BaseEnum):
     GOOGLE = "google"
     JOHN = "john"
     LEA = "lea"
@@ -38,24 +39,24 @@ class SpeechVoice:
     NIGORA = "nigora"
 
 
-class SpeechLang:
-    AUTO = ("auto", "Авто")
-    DE = ("de-DE", "Немецкий")
-    US = ("en-US", "Английский")
-    ES = ("es-ES", "Испанский")
-    FI = ("fi-FI", "Финский")
-    FR = ("fr-FR", "Французский")
-    HE = ("he-HE", "Иврит")
-    IT = ("it-IT", "Итальянский")
-    KZ = ("kk-KZ", "Казахский")
-    NL = ("nl-NL", "Голландский")
-    PL = ("pl-PL", "Польский")
-    PT = ("pt-PT", "Португальский")
-    BR = ("pt-BR", "Бразильский португальский")
-    RU = ("ru-RU", "Русский язык")
-    SE = ("sv-SE", "Шведский")
-    TR = ("tr-TR", "Турецкий")
-    UZ = ("uz-UZ", "Узбекский (латиница)")
+class SpeechLang(BaseEnum):
+    AUTO = "auto"  # Авто
+    DE = "de-DE"  # Немецкий
+    US = "en-US"  # Английский
+    ES = "es-ES"  # Испанский
+    FI = "fi-FI"  # Финский
+    FR = "fr-FR"  # Французский
+    HE = "he-HE"  # Иврит
+    IT = "it-IT"  # Итальянский
+    KZ = "kk-KZ"  # Казахский
+    NL = "nl-NL"  # Голландский
+    PL = "pl-PL"  # Польский
+    PT = "pt-PT"  # Португальский
+    BR = "pt-BR"  # Бразильский португальский
+    RU = "ru-RU"  # Русский язык
+    SE = "sv-SE"  # Шведский
+    TR = "tr-TR"  # Турецкий
+    UZ = "uz-UZ"  # Узбекский (латиница)
 
 
 class Speech:
@@ -67,6 +68,25 @@ class Speech:
         self.model_recognition = None
         self.set_synthesis(voice)
         self.set_recognition(lang)
+
+    def __deepcopy__(self, memo):
+        new_obj = Speech(self.voice, self.lang)
+        memo[id(self)] = new_obj
+        return new_obj
+
+    def init(self, data: dict):
+        voice = data.get("voice")
+        lang = data.get("lang")
+        if voice:
+            self.voice = voice
+            self.set_synthesis(voice)
+        if lang:
+            self.lang = lang
+            self.set_recognition(lang)
+
+    def to_dict(self) -> dict:
+        fields_to_include = ["voice", "lang"]
+        return {key: value for key, value in vars(self).items() if key in fields_to_include}
 
     @property
     def lang2(self):

@@ -32,7 +32,7 @@ from lib.translate import Translate
 
 
 ENUM_NEXT = ("Далее>>", "next")
-SPEECH_MENU = (SpeechLang.AUTO, SpeechLang.RU, SpeechLang.US, ENUM_NEXT)
+SPEECH_MENU = (SpeechLang.AUTO, SpeechLang.RU, SpeechLang.US, ENUM_NEXT[0])
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +42,18 @@ users_speech = defaultdict(lambda: (Speech("marina", "auto"), Speech("john", "en
 users_trans = defaultdict(lambda: Translate())
 state_handler = StateHandlerDecorator("state_handler")
 mode_handler = StateHandlerDecorator("mode_handler")
+
+
+def user_storage_save():
+    user_storage.save_external(users_params, users_speech, dialogue)
+
+
+def user_storage_load():
+    users_params.update(user_storage.get_params("params", BotParams()))
+    users_speech.update(
+        user_storage.get_params_tuple(("speech_1", "speech_2"), (Speech("marina", "auto"), Speech("john", "en-US")))
+    )
+    user_storage.get_object("dialogue", dialogue)
 
 
 def get_markup_message(user_id: str):
@@ -59,7 +71,7 @@ def check_answer_settings(user_id: str, user_input: str) -> bool:
     params = users_params[user_id]
     if params.mode == BotMode.TRANSLATE and params.type_translate == BotTypeTranslate.MANUAL:
         user_input = user_input.strip()
-        menu = get_class_dict(SpeechLang)
+        menu = get_class_dict(SpeechLang, capitalize=False)
         if user_input in menu:
             params.lang = menu[user_input]
             return True
@@ -68,9 +80,10 @@ def check_answer_settings(user_id: str, user_input: str) -> bool:
 
 @bot.message_handler(commands=["start"])
 def send_welcome(message):
-    user_id = message.chat.id
+    user_id = str(message.chat.id)
     dialogue.system(user_id)
     dialogue.clear(user_id)
+    dialogue.reset_model(user_id)
     users_params[user_id] = BotParams()
     users_speech[user_id] = (Speech("marina", "auto"), Speech("john", "en-US"))
     msg = [
@@ -87,7 +100,7 @@ def send_welcome(message):
 @bot.message_handler(commands=["users"])
 @admin_required
 def send_users(message):
-    user_id = message.chat.id
+    user_id = str(message.chat.id)
     users_str = user_storage.to_str()
     bot.send_message(user_id, f"Информация пользователей:\n" + users_str, reply_markup=get_markup_message(user_id))
 
@@ -108,9 +121,19 @@ def send_ban_access(message, from_user_id):
     send_message_admin(f"Доступ запрещён для пользователя с ID: {from_user_id}.")
 
 
+@bot.message_handler(commands=["save"])
+@admin_required
+def send_save(message):
+    user_id = str(message.chat.id)
+    user_storage_save()
+    msg = "Данные всех пользователей сохранены."
+    logger.info(msg)
+    bot.send_message(user_id, msg, reply_markup=get_markup_message(user_id))
+
+
 @bot.message_handler(commands=["clear"])
 def send_clear(message):
-    user_id = message.chat.id
+    user_id = str(message.chat.id)
     params = users_params[user_id]
     dialogue.clear(user_id)
     bot.send_message(user_id, "Очистил ваш диалог.", reply_markup=get_markup_message(user_id))
@@ -119,7 +142,7 @@ def send_clear(message):
 
 @bot.message_handler(commands=["system"])
 def send_system(message):
-    user_id = message.chat.id
+    user_id = str(message.chat.id)
     params = users_params[user_id]
     conversation_default = dialogue.get_system(user_id)
     bot.send_message(user_id, f'Системное сообщение: {conversation_default["content"]}', reply_markup=hide_markup)
@@ -146,18 +169,18 @@ def handle_system_step2(user_id: str, user_input: str) -> Optional[bool]:
     if check_message(bot, user_id, user_input, list(menu.keys())):
         menu[user_input]()
         bot.send_message(user_id, "Системное сообщение записал!", reply_markup=get_markup_message(user_id))
+        return True
     else:
         return False
 
 
 @bot.message_handler(commands=["lang"])
 def send_lang(message):
-    user_id = message.chat.id
+    user_id = str(message.chat.id)
     params = users_params[user_id]
     speech = users_speech[user_id][0]
-    markup_menu = [item[0] for item in SPEECH_MENU]
     markup = ReplyKeyboardMarkup(one_time_keyboard=True)
-    markup.add(*markup_menu)
+    markup.add(*SPEECH_MENU)
     url = "https://cloud.yandex.ru/ru/docs/speechkit/stt/models"
     msg = [
         f"Язык: {speech.lang}. Выберите первый язык бота.",
@@ -171,11 +194,10 @@ def send_lang(message):
 def choice_recognition(user_id: str, user_input: str, step: int) -> Optional[bool]:
     params = users_params[user_id]
     speech = users_speech[user_id][step - 1]
-    menu = get_class_dict(SpeechLang)
-    menu[ENUM_NEXT[0]] = ENUM_NEXT
-    markup_menu = [item[0] for item in SPEECH_MENU]
+    menu = get_class_dict(SpeechLang, capitalize=False)
+    menu[ENUM_NEXT[0]] = ENUM_NEXT[0]
     msg_error = "Нет такого языка, попробуйте ещё..."
-    if check_message(bot, user_id, user_input, list(menu.keys()), is_markup=markup_menu, msg_error=msg_error):
+    if check_message(bot, user_id, user_input, list(menu.keys()), is_markup=SPEECH_MENU, msg_error=msg_error):
         if user_input != ENUM_NEXT[0]:
             speech.set_recognition(user_input)
             bot.send_message(user_id, "Язык сохранил!", reply_markup=hide_markup)
@@ -229,7 +251,7 @@ def choice_voice(user_id: str, user_input: str, step: int) -> Optional[bool]:
     params = users_params[user_id]
     speech = users_speech[user_id][step - 1]
     menu = get_class_dict(SpeechVoice)
-    menu[ENUM_NEXT[0]] = ENUM_NEXT
+    menu[ENUM_NEXT[0]] = ENUM_NEXT[0]
     msg_error = "Нет такого голоса, попробуйте ещё..."
     if check_message(bot, user_id, user_input, list(menu.keys()), is_markup=False, msg_error=msg_error):
         if user_input != ENUM_NEXT[0]:
@@ -237,9 +259,8 @@ def choice_voice(user_id: str, user_input: str, step: int) -> Optional[bool]:
             bot.send_message(user_id, "Голос сохранил!", reply_markup=hide_markup)
         if step == 1:
             speech = users_speech[user_id][step]
-            markup_menu = [item[0] for item in SPEECH_MENU]
             markup = ReplyKeyboardMarkup(one_time_keyboard=True)
-            markup.add(*markup_menu)
+            markup.add(*SPEECH_MENU)
             bot.send_message(user_id, f"Язык: {speech.lang}. Выберите второй язык бота.", reply_markup=markup)
             params.state = BotState.RECOGNITION_STEP2
             return False
@@ -270,7 +291,7 @@ def handle_voice2(user_id: str, user_input: str) -> Optional[bool]:
 
 @bot.message_handler(commands=["answer"])
 def send_answer(message):
-    user_id = message.chat.id
+    user_id = str(message.chat.id)
     params = users_params[user_id]
     answers = list(get_class_dict(BotAnswer).keys())
     markup = ReplyKeyboardMarkup(one_time_keyboard=True)
@@ -288,18 +309,20 @@ def handle_answer(user_id: str, user_input: str) -> Optional[bool]:
     if check_message(bot, user_id, user_input, list(menu.keys())):
         params.answer = menu[user_input]
         bot.send_message(user_id, "Формат ответа сохранил!", reply_markup=get_markup_message(user_id))
+        return True
     else:
         return False
 
 
 @bot.message_handler(commands=["model"])
 def send_model(message):
-    user_id = message.chat.id
+    user_id = str(message.chat.id)
     params = users_params[user_id]
     ai_models = get_class_dict(BotAIModel)
     markup = ReplyKeyboardMarkup(one_time_keyboard=True)
     markup.add(*list(ai_models.keys()))
-    bot.send_message(user_id, f"Выберите модель ИИ.", reply_markup=markup)
+    model = dialogue.get_model(user_id)
+    bot.send_message(user_id, f"Сейчас используется модель: {model}. Выберите модель ИИ.", reply_markup=markup)
     params.state = BotState.MODEL
 
 
@@ -311,18 +334,19 @@ def handle_model(user_id: str, user_input: str) -> Optional[bool]:
         params.model = menu[user_input]
         dialogue.user_model[user_id] = params.model[1]
         bot.send_message(user_id, "Модель ИИ изменил!", reply_markup=get_markup_message(user_id))
+        return True
     else:
         return False
 
 
 @bot.message_handler(commands=["mode"])
 def send_mode(message):
-    user_id = message.chat.id
+    user_id = str(message.chat.id)
     params = users_params[user_id]
     menu = get_class_dict(BotMode)
     markup = ReplyKeyboardMarkup(one_time_keyboard=True)
     markup.add(*list(menu.keys()))
-    bot.send_message(user_id, "Выберите режим функционирования бота.", reply_markup=markup)
+    bot.send_message(user_id, f"Сейчас: {params.mode[0]}. Выберите режим функционирования бота.", reply_markup=markup)
     params.state = BotState.MODE
 
 
@@ -333,6 +357,7 @@ def handle_mode(user_id: str, user_input: str) -> Optional[bool]:
     if check_message(bot, user_id, user_input, list(menu.keys())):
         params.mode = menu[user_input]
         bot.send_message(user_id, "Режим изменил!", reply_markup=get_markup_message(user_id))
+        return True
     else:
         return False
 
@@ -411,7 +436,7 @@ def handle_output_message(user_id: str, user_input: str) -> Optional[bool]:
 
 
 def handle_input_message(message) -> (Optional[str], str):
-    user_id = message.chat.id
+    user_id = str(message.chat.id)
     params = users_params[user_id]
     message_time = datetime.fromtimestamp(message.date)
     params.data["last_time"] = message_time
@@ -453,7 +478,7 @@ def handle_input_message(message) -> (Optional[str], str):
 @bot.message_handler(func=lambda message: True, content_types=["text", "voice"])
 @command_with_timeout(timeout=180)
 def handle_message(message):
-    user_id = message.chat.id
+    user_id = str(message.chat.id)
     params = users_params[user_id]
     next_state = True
 
@@ -478,6 +503,7 @@ def handle_message(message):
 
 
 if __name__ == "__main__":
+    # Логирование
     file_handler = logging.FileHandler("app.log")
     stream_handler = logging.StreamHandler()
     logging.basicConfig(
@@ -486,6 +512,10 @@ if __name__ == "__main__":
         handlers=[file_handler, stream_handler],
     )
 
+    # Передача параметров
+    user_storage_load()
+
+    # Запуск бота
     bot.set_my_commands(
         [
             BotCommand("start", "Начать работу с ботом"),

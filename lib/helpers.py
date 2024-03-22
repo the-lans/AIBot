@@ -13,6 +13,7 @@ from lib.users import UserStorage
 
 
 logger = logging.getLogger(__name__)
+
 bot = TeleBot(Config.API_KEY_TELEGRAM_BOT)
 user_storage = UserStorage("users.json")
 hide_markup = ReplyKeyboardRemove()
